@@ -15,7 +15,7 @@ def series_rms(values: tuple) -> float:
 
     Parameters:
     -----------
-    values: array_like
+    values : array_like
 
     Returns
     -------
@@ -26,12 +26,12 @@ def series_rms(values: tuple) -> float:
 
 
 def nsd_rms(nsd: tuple) -> float:
-    """Root mean square (RMS) of given nsd
+    """Root mean square (RMS) of given NSD
 
     Parameters:
     -----------
-    nsd: [array_like, array_like]
-        nsd[0]: frequencies, nsd[1]: nsd values
+    nsd : [array_like, array_like]
+        nsd[0]: frequencies, nsd[1]: NSD values
 
     Returns
     -------
@@ -47,7 +47,7 @@ def window_flattop(length: int):
 
     Parameters:
     -----------
-    length: int
+    length : int
         number of samples to generate
 
     Returns
@@ -66,7 +66,7 @@ def window_HFT90D(length: int):
 
     Parameters:
     -----------
-    length: int
+    length : int
         number of samples to generate
 
     Returns
@@ -88,11 +88,50 @@ def window_HFT90D(length: int):
 
     return noverlap, window
 
+# TODO overlapping
+def smooth(ordered_nsd, nsd_bins=64, filter_function=np.mean):
+    """Smooth the NSD evenly spaced in log space
+
+    Parameters:
+    -----------
+
+    ordered_nsd : [array_like, array_like]
+        ordered_nsd[0]: ascending ordered frequencies, ordered_nsd[1]: corresponding NSD values
+
+    nsd_bins : int, optional
+        number of NSD bins (points) to be calculated
+        default: 64
+
+    filter_function : function(array_like), optional
+        returns: [array_like]
+            filtered values
+        default: np.mean
+
+    Returns
+    -------
+    out : [array, array]
+        The frequencies (index 0) and the corresponding smoothed NSD values (index 1)
+    """
+    geomspace = np.geomspace(ordered_nsd[0][0],ordered_nsd[0][-1],num=nsd_bins)
+    frequencies = []
+    nsd = []
+    i1 = int(0)
+    i2 = int(1)
+    for freq in geomspace[1:]:
+        while ordered_nsd[0][i2] < freq:
+            i2 +=1
+        freq_mean = ordered_nsd[0][i1:i2+1].mean()
+        values_filtered = filter_function(ordered_nsd[1][i1:i2+1])
+        frequencies.append(freq_mean)
+        nsd.append(values_filtered)
+        i1 = i2
+    return (frequencies, nsd)
+
 
 def get(
     ts_values: tuple,
     sample_frequency: float,
-    nsd_bins: int,
+    nsd_bins: int=None,
     window_function=window_HFT90D,
     crop=np.s_[3:-1],
 ):
@@ -102,9 +141,9 @@ def get(
     From the white noise part (flat) the rms value of a desired bandwidth can be calculated: rms = value * bandwidth^0.5
 
     Warning:
-        If the acquisition time (aperture) of the input signal is lower than the time between samples of the output (ts_values), then the nsd is not correct!
+        If the acquisition time of the input signal (aperture) is lower than the time between samples of the output (ts_values), than the NSD is incorrect (e.g. AZ on ADCs/DMMs)!
         Nsd using acquisition time (aperture) as sample_frequency only shows correct white noise part.
-        Nsd using time between samples as sample_frequency only shows correct 1/f (1/f^n) part, the white noise part is too high, being (Tsps/Tacq)^0.5, e.g. for AZ: (40ms/20ms)^0.5, so ~1.4
+        Nsd using time between samples as sample_frequency only shows correct 1/f (1/f^n, n:real) part, the white noise part is too high, being (Tsps/Tacq)^0.5, e.g. for AZ: (40ms/20ms)^0.5, so ~1.4
         Neither will give the correct 1/f (1/f^n, n:real) noise corner!
 
     Parameters:
@@ -116,9 +155,10 @@ def get(
     sample_frequency : int/float
         The sample frequency in Hz (SPS - Samples per second)
 
-    nsd_bins : int
+    nsd_bins : int, optional
         number of NSD bins (points) to be calculated
         needs to be lower than the ts_values count
+        default: 1/4 count of ts_values
 
 
     window_function : function(length: int), optional
@@ -128,14 +168,15 @@ def get(
         default: window_HFT90D
 
     crop : slice, optional
-        default: the last and the first 3 nsd values are dropped as they are not reliable
+        default: the last and the first 3 NSD values are dropped as they are not reliable
 
     Returns
     -------
     out : [array, array]
         The frequencies (index 0) and the corresponding NSD values (index 1)
-
     """
+    if nsd_bins is None:
+        nsd_bins = int(len(ts_values)/4)
     noverlap, window = window_function(nsd_bins)
     frequencies, psd = signal.welch(
         x=ts_values,
@@ -150,5 +191,5 @@ def get(
         # axis = -1,
         # average = 'mean'
     )
-    # crop & transform psd to nsd
+    # crop & transform PSD to NSD
     return (frequencies[crop], psd[crop]**0.5)

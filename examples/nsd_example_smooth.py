@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import EngFormatter
 import nsd
 
-samples = 2**26 # number of samples to generate 2**20 = 1Mio
+samples = 2**24 # number of samples to generate 2**20 = 1Mio
 sample_rate = 50 # in Hz
-nsd_bins = 2**22 # number of nsd points
+nsd_bins = 2**20 # number of nsd points
 
 def get_noise(samples):
     np.random.seed(4) # same result for each run
@@ -27,26 +27,9 @@ def tones(rms, freq, fs, samples):
         ur.append(rms * 2**0.5 * np.cos(2 * np.pi * freq * t))
     return np.array(ur)
 
-ts_noise = get_noise(samples)
-
-#ts_noise += tones(2.7e-11, 1, sample_rate, samples) + tones(2.7e-11, 0.01, sample_rate, samples) 
-ts_noise += tones(6e-11, 1, sample_rate, samples) + tones(6e-11, 0.01, sample_rate, samples) 
-
-nsd_noise = nsd.get(ts_noise, sample_rate, nsd_bins)
-
-nth = 4
-nsd_noise_nth = [nsd.get(ts_noise[::nth], sample_rate, int(nsd_bins/nth))]
-nsd_noise_nth.append(nsd.get(ts_noise[::nth], sample_rate/nth, int(nsd_bins/nth)))
-nsd_noise_nth.append([nsd_noise_nth[-2][0]/nth, nsd_noise_nth[-2][1]])
-nsd_noise_nth.append([nsd_noise_nth[-2][0], nsd_noise_nth[-2][1]/nth**0.5])
-    
-series_rms=nsd.series_rms(ts_noise)
-nsd_rms=nsd.nsd_rms(nsd_noise)
-print(f'Series RMS: {series_rms:.2e}, NSD RMS: {nsd_rms:.2e}')
-    
 def plotnsd(values_list, title):
     # Plot
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(15, 10))
     plt.title(title, fontsize=13)
     for values in values_list:
         plt.plot(values['nsd'][0], values['nsd'][1], '-', ms=1, lw=1, alpha=0.5, label=values['label'])
@@ -62,17 +45,32 @@ def plotnsd(values_list, title):
     plt.legend()
 
     #save plot
-    #fig.tight_layout()                                                          # Adjust spacings w.r.t. figsize
-    #plt.rcParams['savefig.facecolor']='white'                                   # set background color for saving, standard is transparent
-    #plt.savefig(f'white & white_pink (f^-0.5) noise - corner 0.1Hz x 1nV.png')  # change name accordingly
+    fig.tight_layout()                                             # Adjust spacings w.r.t. figsize
+    plt.rcParams['savefig.facecolor']='white'                      # set background color for saving, standard is transparent
+    #plt.savefig(f'white & white_pink (f^-0.5) noise - corner 0.1Hz x 1nV - smoothing.png')  # change name accordingly
 
-    plt.show()
+    #plt.show()
 
+ts_noise = get_noise(samples)
+ts_noise += tones(6e-11, 1, sample_rate, samples) + tones(6e-11, 0.01, sample_rate, samples) 
+
+nsd_noise = nsd.get(ts_noise, sample_rate, nsd_bins)
+
+nth = 4
+nsd_noise_nth = [nsd.get(ts_noise[::nth], sample_rate, int(nsd_bins/nth))]
+nsd_noise_nth.append(nsd.get(ts_noise[::nth], sample_rate/nth, int(nsd_bins/nth)))
+nsd_noise_nth.append([nsd_noise_nth[-2][0]/nth, nsd_noise_nth[-2][1]])
+nsd_noise_nth.append([nsd_noise_nth[-2][0], nsd_noise_nth[-2][1]/nth**0.5])
+    
+series_rms=nsd.series_rms(ts_noise)
+nsd_rms=nsd.nsd_rms(nsd_noise)
+print(f'Series RMS: {series_rms:.2e}, NSD RMS: {nsd_rms:.2e}')
+    
 noises = [{'nsd': nsd_noise, 'label': f'target {sample_rate}SPS'}]
-noises.append({'nsd': nsd_noise_nth[0], 'label': f'every {nth}th {sample_rate}SPS'})
-noises.append({'nsd': nsd_noise_nth[1], 'label': f'every {nth}th {sample_rate/nth}SPS'})
-noises.append({'nsd': nsd_noise_nth[2], 'label': f'every {nth}th {sample_rate}SPS "corrected"'})
-noises.append({'nsd': nsd_noise_nth[3], 'label': f'every {nth}th {sample_rate/nth}SPS "corrected"'})
+noises.append({'nsd': nsd.smooth(nsd_noise, 64), 'label': f'target {sample_rate}SPS smoothed mean 64pts'})
+noises.append({'nsd': nsd.smooth(nsd_noise, 64, filter_function=np.median), 'label': f'target {sample_rate}SPS smoothed median 64pts'})
+from scipy import signal as sp
+noises.append({'nsd': sp.savgol_filter(nsd_noise, window_length=64, polyorder=3, deriv=0, delta=1.0), 'label': f'target {sample_rate}SPS SavGol wl:64 poly:3'})
 
 plotnsd(noises, r'White & white/pink (1/$\sqrt{f}$) noise - corner: 0.1Hz/1nV')
 

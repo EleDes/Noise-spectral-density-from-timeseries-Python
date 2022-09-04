@@ -21,14 +21,6 @@ def get_noise():
     brownian_white = white + brownian
     return brownian_white
 
-ts_noise = get_noise()
-
-nsd_noise = nsd.get(ts_noise, sample_rate, nsd_bins)
-    
-series_rms=nsd.series_rms(ts_noise)
-nsd_rms=nsd.nsd_rms(nsd_noise)
-print(f'Series RMS: {series_rms:.2e}, NSD RMS: {nsd_rms:.2e}')
-    
 def plotnsd(freq, values, label):
     # Plot
     fig, ax = plt.subplots(figsize=(15, 10))
@@ -44,11 +36,18 @@ def plotnsd(freq, values, label):
     plt.legend()
 
     #save plot
-    #fig.tight_layout()                                             # Adjust spacings w.r.t. figsize
-    #plt.rcParams['savefig.facecolor']='white'                      # set background color for saving, standard is transparent
+    fig.tight_layout()                                             # Adjust spacings w.r.t. figsize
+    plt.rcParams['savefig.facecolor']='white'                      # set background color for saving, standard is transparent
     #plt.savefig(f'white & brownian noise corner 0.1Hz x 1nV.png')  # change name accordingly
 
     plt.show()
 
-plotnsd(nsd_noise[0], nsd_noise[1], 'white and brownian noise - corner: 0.1Hz/1nV')
+ts_noise = get_noise()
 
+nsd_noise = nsd.get(ts_noise, sample_rate, nsd_bins)
+    
+series_rms=nsd.series_rms(ts_noise)
+nsd_rms=nsd.nsd_rms(nsd_noise)
+print(f'Series RMS: {series_rms:.2e}, NSD RMS: {nsd_rms:.2e}')
+    
+plotnsd(nsd_noise[0], nsd_noise[1], 'white and brownian noise - corner: 0.1Hz/1nV')
