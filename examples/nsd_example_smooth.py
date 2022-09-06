@@ -1,77 +1,51 @@
 import numpy as np
-import colorednoise as cn
-import matplotlib.pyplot as plt
-from matplotlib.ticker import EngFormatter
 import nsd
+import nsd_helper as nh
+from scipy import signal as sp
 
-samples = 2**24 # number of samples to generate 2**20 = 1Mio
-sample_rate = 50 # in Hz
-nsd_bins = 2**20 # number of nsd points
 
-def get_noise(samples):
-    np.random.seed(4) # same result for each run
+samples = 2**20                     # number of samples to generate 2**20 = 1Mio
+sample_rate = 50                    # in Hz
+#nsd_bins = 2**20                    # number of nsd points, optional, default: samples/4
+noise_types = ['white', 'brownian'] # see nsd_helper nsd_noise
 
-    beta = 0 # the exponent - 0: gaussian, 1: pink (1/f), 2: brown (1/f**2), -1: blue, -2: violet
-    white = cn.powerlaw_psd_gaussian(beta, samples)/2e8    #/2e8 for beta = 0, /5.5e8 for beta = 0.5, /8.5e8 for beta = 1, /4e7 for beta = 2 and 0.1Hzx1nV
+# generate white + brownian noise with two tones
+ts_noise = nh.nsd_noise(samples, noise_types=noise_types)   # seed is optional, default: seed=4
+ts_noise += nh.tone(1e-9, 1, sample_rate, samples) + nh.tone(1e-9, 0.01, sample_rate, samples) 
 
-    beta = 0.5 # the exponent - 0: gaussian, 1: pink (1/f), 2: brown (1/f**2), -1: blue, -2: violet
-    brownian = cn.powerlaw_psd_gaussian(beta, samples)/5.5e8    #/2e8 for beta = 0, /5.5e8 for beta = 0.5, /8.5e8 for beta = 1, /4e7 for beta = 2 and 0.1Hzx1nV
+# get the NSD
+nsd_noise = nsd.get(ts_noise, sample_rate)  #nsd_bins = number of nsd points, optional, default: samples/4
 
-    brownian_white = white + brownian
-    return brownian_white
-
-def tones(rms, freq, fs, samples):
-    ur = []
-    for i in range (0, samples):
-        t = i / fs
-        ur.append(rms * 2**0.5 * np.cos(2 * np.pi * freq * t))
-    return np.array(ur)
-
-def plotnsd(values_list, title):
-    # Plot
-    fig, ax = plt.subplots(figsize=(15, 10))
-    plt.title(title, fontsize=13)
-    for values in values_list:
-        plt.plot(values['nsd'][0], values['nsd'][1], '-', ms=1, lw=1, alpha=0.5, label=values['label'])
-    #plt.plot(values[0], values[1], '-o', ms=0.5, lw=0.5, label=label)
-    plt.xlabel('frequency in Hz')
-    plt.ylabel(r'noise in V/$\sqrt{Hz}$')
-    plt.loglog()
-    plt.grid(True, which="both")
-    formatter1 = EngFormatter(sep="")
-    plt.gca().xaxis.set_major_formatter(formatter1)
-    plt.gca().yaxis.set_major_formatter(formatter1)
-    plt.gca().yaxis.set_minor_formatter(formatter1)
-    plt.legend()
-
-    #save plot
-    fig.tight_layout()                                             # Adjust spacings w.r.t. figsize
-    plt.rcParams['savefig.facecolor']='white'                      # set background color for saving, standard is transparent
-    #plt.savefig(f'white & white_pink (f^-0.5) noise - corner 0.1Hz x 1nV - smoothing.png')  # change name accordingly
-
-    #plt.show()
-
-ts_noise = get_noise(samples)
-ts_noise += tones(6e-11, 1, sample_rate, samples) + tones(6e-11, 0.01, sample_rate, samples) 
-
-nsd_noise = nsd.get(ts_noise, sample_rate, nsd_bins)
-
-nth = 4
-nsd_noise_nth = [nsd.get(ts_noise[::nth], sample_rate, int(nsd_bins/nth))]
-nsd_noise_nth.append(nsd.get(ts_noise[::nth], sample_rate/nth, int(nsd_bins/nth)))
-nsd_noise_nth.append([nsd_noise_nth[-2][0]/nth, nsd_noise_nth[-2][1]])
-nsd_noise_nth.append([nsd_noise_nth[-2][0], nsd_noise_nth[-2][1]/nth**0.5])
-    
-series_rms=nsd.series_rms(ts_noise)
-nsd_rms=nsd.nsd_rms(nsd_noise)
+# compare ACRMS between time series and NSD, should be nearly equal
+series_rms = nsd.series_rms(ts_noise)
+nsd_rms = nsd.nsd_rms(nsd_noise)
 print(f'Series RMS: {series_rms:.2e}, NSD RMS: {nsd_rms:.2e}')
     
+# add NSD and NSD with different filters to dictionary
 noises = [{'nsd': nsd_noise, 'label': f'target {sample_rate}SPS'}]
-noises.append({'nsd': nsd.smooth(nsd_noise, 64), 'label': f'target {sample_rate}SPS smoothed mean 64pts'})
+
+noises.append({'nsd': sp.savgol_filter(nsd_noise, window_length=64, polyorder=1, deriv=0, delta=1.0), 'label': f'target {sample_rate}SPS SavGol wl:64 poly:1'})
+
 noises.append({'nsd': nsd.smooth(nsd_noise, 64, filter_function=np.median), 'label': f'target {sample_rate}SPS smoothed median 64pts'})
-from scipy import signal as sp
-noises.append({'nsd': sp.savgol_filter(nsd_noise, window_length=64, polyorder=3, deriv=0, delta=1.0), 'label': f'target {sample_rate}SPS SavGol wl:64 poly:3'})
+noises.append({'nsd': nsd.smooth(nsd_noise, 64), 'label': f'target {sample_rate}SPS smoothed mean 64pts'})
 
-plotnsd(noises, r'White & white/pink (1/$\sqrt{f}$) noise - corner: 0.1Hz/1nV')
+# fit
+geomspace = np.geomspace(nsd_noise[0][0], nsd_noise[0][-1], num=64)
 
+# linear space
+popt, pcov = nsd.fit(nsd_noise)
+perr = np.sqrt(np.diag(pcov))   # one standard deviation errors on the parameters
+popt_eng = nh.eng(popt)
+print (f'Parameter: {popt_eng}, one Std: {nh.eng(perr)}')
+noises.append({'nsd': [geomspace, nsd.fit_function(geomspace, *popt)], 'label': f'target {sample_rate}SPS fit to a/f^b + c (least squares): a={popt_eng[0]}, b={popt_eng[1]}, c={popt_eng[2]}'})
+
+# loglog space
+popt1, pcov1 = nsd.fit_loglog(nsd_noise)
+perr1 = np.sqrt(np.diag(pcov1))   # one standard deviation errors on the parameters
+popt1_eng = nh.eng(popt1)
+print (f'Parameter: {popt1_eng}, one Std: {nh.eng(perr1)}')
+noises.append({'nsd': [geomspace, nsd.fit_function((geomspace), *popt1)], 'label': f'target {sample_rate}SPS fit to a/f^b + c (least squares in loglog space): a={popt1_eng[0]}, b={popt1_eng[1]}, c={popt1_eng[2]}'})
+
+# plot
+nh.plot(noises, f'NSD for {" & ".join(noise_types)} noise, {nh.eng(samples)} samples - filter comparison')
 print('done')

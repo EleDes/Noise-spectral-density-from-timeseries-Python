@@ -4,8 +4,9 @@
 
 """Generates an estimation of the noise amplitude spectral density (NSD) of a time series"""
 
-from scipy import signal, integrate
 import numpy as np
+from scipy import signal, integrate
+from scipy.optimize import curve_fit
 
 
 def series_rms(values: tuple) -> float:
@@ -127,6 +128,64 @@ def smooth(ordered_nsd, nsd_bins=64, filter_function=np.mean):
         i1 = i2
     return (frequencies, nsd)
 
+def fit_function(freq, slope, freq_exp, white):
+    '''NSD fit function for 1/f^n + white noise
+
+    f = (slope / freq**(freq_exp/2)) + white
+    '''
+    return ((slope / freq**(freq_exp/2)) + white)
+
+def fit_function_loglog(freq, slope, freq_exp, white):
+    '''NSD fit function for 1/f^n + white noise in the loglog space
+
+    f = np.log10((10**slope / ((10**freq) ** ((10**freq_exp) / 2))) + 10**white)
+    '''
+    return np.log10((10**slope / ((10**freq) ** ((10**freq_exp) / 2))) + 10**white)
+
+def fit(nsd, fit_function=fit_function):
+    """Least squares curve fitting the NSD
+
+       Gives worse fits than fitting in loglog space, see fit_loglog
+
+    Parameters:
+    -----------
+
+    nsd : [array, array]
+        NSD from get()
+
+    fit_function : function, optional
+        The function in loglog space to fit the nsd
+        default: fit_function_loglog = np.log10((10**slope / ((10**freq) ** ((10**freq_exp) / 2)) + 10**white))
+
+    Returns
+    -------
+    out : [array, array]
+        The optimal values for the parameters (index 0) and the corresponding estimated covariance (index 1)
+    """
+    return curve_fit(fit_function, nsd[0], nsd[1])
+
+def fit_loglog(nsd, fit_function=fit_function_loglog):
+    """Least squares curve fitting the NSD in loglog space
+
+       Gives better fits than fitting in linear space, see fit
+
+    Parameters:
+    -----------
+
+    nsd : [array, array]
+        NSD from get()
+
+    fit_function : function, optional
+        The function in loglog space to fit the nsd
+        default: fit_function_loglog = np.log10((10**slope / ((10**freq) ** ((10**freq_exp) / 2)) + 10**white))
+
+    Returns
+    -------
+    out : [array, array]
+        The optimal values for the parameters (index 0) and the corresponding estimated covariance (index 1)
+    """
+    popt, pcov = curve_fit(fit_function, np.log10(nsd[0]), np.log10(nsd[1]))
+    return (10**popt, pcov)
 
 def get(
     ts_values: tuple,
@@ -142,8 +201,8 @@ def get(
 
     Warning:
         If the acquisition time of the input signal (aperture) is lower than the time between samples of the output (ts_values), than the NSD is incorrect (e.g. AZ on ADCs/DMMs)!
-        Nsd using acquisition time (aperture) as sample_frequency only shows correct white noise part.
-        Nsd using time between samples as sample_frequency only shows correct 1/f (1/f^n, n:real) part, the white noise part is too high, being (Tsps/Tacq)^0.5, e.g. for AZ: (40ms/20ms)^0.5, so ~1.4
+        NSD using acquisition time (aperture) as sample_frequency only shows correct white noise part.
+        NSD using time between samples as sample_frequency only shows correct 1/f (1/f^n, n:real) part, the white noise part is too high, being (Tsps/Tacq)^0.5, e.g. for AZ: (40ms/20ms)^0.5, so ~1.4
         Neither will give the correct 1/f (1/f^n, n:real) noise corner!
 
     Parameters:
@@ -159,7 +218,6 @@ def get(
         number of NSD bins (points) to be calculated
         needs to be lower than the ts_values count
         default: 1/4 count of ts_values
-
 
     window_function : function(length: int), optional
         returns: [int, array_like]

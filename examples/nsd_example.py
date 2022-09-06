@@ -10,7 +10,7 @@ nsd_bins = 2**20 # number of nsd points
 def get_noise():
     np.random.seed(4) # same result for each run
 
-    samples = 2**22 # number of samples to generate 2**20 = 1Mio
+    samples = 2**20 # number of samples to generate 2**20 = 1Mio
 
     beta = 0 # the exponent - 0: gaussian, 1: pink (1/f), 2: brown (1/f**2), -1: blue, -2: violet
     white = cn.powerlaw_psd_gaussian(beta, samples)/2e8    #/2e8 for beta = 0, /5.5e8 for beta = 0.5, /8.5e8 for beta = 1, /4e7 for beta = 2 and 0.1Hzx1nV

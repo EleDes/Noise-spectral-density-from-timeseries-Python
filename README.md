@@ -63,4 +63,4 @@ Neither will give the correct 1/f (1/f^n, n:real) noise corner!
 ![nsd_example_csv](examples/K182%20low%20T-EMF%20short%203mV%2020ms%20no%20filter%202022-06-24.csv.png?raw=true "nsd_example_csv")
 
 [nsd_example_smooth](examples/nsd_example_smooth.py) shows different filters:
-![nsd_example_smooth](examples/white%20&%20white_pink%20(f^-0.5)%20noise%20-%20corner%200.1Hz%20x%201nV%20-%20smoothing.png?raw=true "nsd_example_smooth")
+![nsd_example_smooth](examples/white%20&%20brownian%20noise%20-%20filter%20comparison.png?raw=true "nsd_example_smooth")
